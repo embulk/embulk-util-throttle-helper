@@ -23,8 +23,6 @@ repositories {
 }
 
 dependencies {
-    api "com.google.code.findbugs:annotations:3.0.0"
-    api "com.google.guava:guava:18.0"
     testCompile "junit:junit:4.13"
 }
 
