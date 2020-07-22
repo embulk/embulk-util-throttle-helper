@@ -1,164 +1,127 @@
 plugins {
-    id "com.jfrog.bintray" version "1.8.4"
-    id "com.github.jruby-gradle.base" version "1.4.0"
     id "java"
-    id "maven" // install jar files to the local repo: $ gradle install
+    id "java-library"
     id "maven-publish"
-    id "checkstyle"
-    //id "jacoco"
+    id "signing"
 }
 
-subprojects {
-    apply plugin: 'maven'
-    apply plugin: 'maven-publish'
-    apply plugin: 'java'
-    apply plugin: 'jacoco'
-    apply plugin: 'com.github.jruby-gradle.base'
-    apply plugin: 'com.jfrog.bintray'
+group = "org.embulk"
+version = "0.8.0-SNAPSHOT"
+description = "Helper to control access throttle"
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+configurations {
+    compileClasspath.resolutionStrategy.activateDependencyLocking()
+    runtimeClasspath.resolutionStrategy.activateDependencyLocking()
 }
 
-allprojects {
-    group = 'org.embulk.base.restclient'
-    version = '0.7.0'
-
-    repositories {
-        mavenCentral()
-        jcenter()
-    }
-
-    dependencies {
-        compileOnly "org.embulk:embulk-core:0.9.17"
-
-        testCompile 'junit:junit:4.12'
-        testCompile "org.embulk:embulk-core:0.9.17"
-    }
-
-    tasks.withType(Javadoc) {
-        options.addStringOption("Xdoclint:none", "-quiet")
-    }
-
-    // add tests/javadoc/source jar tasks as artifacts to be released
-    task testsJar(type: Jar, dependsOn: classes) {
-        classifier = 'tests'
-        from sourceSets.test.output
-    }
-    task sourcesJar(type: Jar, dependsOn: classes) {
-        classifier = 'sources'
-        from sourceSets.main.allSource
-    }
-    task javadocJar(type: Jar, dependsOn: javadoc) {
-        classifier = 'javadoc'
-        from javadoc.destinationDir
-    }
+repositories {
+    mavenCentral()
+    jcenter()
 }
 
 dependencies {
-    testCompile "org.embulk:embulk-core:0.9.17:tests"
-    testCompile project(':embulk-util-retryhelper-jaxrs')
-
-    // RESTEasy JAX-RS implementation is required only for testing.
-    testCompile 'org.jboss.resteasy:resteasy-client:3.0.19.Final'
+    api "com.google.code.findbugs:annotations:3.0.0"
+    api "com.google.guava:guava:18.0"
+    testCompile "junit:junit:4.13"
 }
 
-def javaVersion = JavaVersion.VERSION_1_8;
-sourceCompatibility = javaVersion
-targetCompatibility = javaVersion
+tasks.withType(JavaCompile) {
+    options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+    options.encoding = "UTF-8"
+}
 
-task enforceJavaVersion {
-    doLast {
-        def foundVersion = JavaVersion.current();
-        if (foundVersion != javaVersion) {
-            if (project.hasProperty('ignoreJavaVersion') || System.getenv('TRAVIS') == 'true') {
-                println "[WARN] Java " + javaVersion + " is required, but found Java " + foundVersion + "."
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
+
+javadoc {
+    title = "${project.name} v${project.version}"
+    options {
+        locale = "en_US"
+        encoding = "UTF-8"
+        overview = "src/main/html/overview.html"
+        links "https://docs.oracle.com/javase/8/docs/api/"
+    }
+}
+
+jar {
+    from rootProject.file("LICENSE")
+}
+
+sourcesJar {
+    from rootProject.file("LICENSE")
+}
+
+javadocJar {
+    from rootProject.file("LICENSE")
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId = "${project.group}"
+            artifactId = "${project.name}"
+
+            from components.java
+            // javadocJar and sourcesJar are added by java.withJavadocJar() and java.withSourcesJar() above.
+            // See: https://docs.gradle.org/current/javadoc/org/gradle/api/plugins/JavaPluginExtension.html
+
+            pom {  // https://central.sonatype.org/pages/requirements.html
+                packaging "jar"
+
+                name = "${project.name}"
+                description = "${project.description}"
+                url = "https://www.embulk.org/"
+
+                licenses {
+                    license {
+                        // http://central.sonatype.org/pages/requirements.html#license-information
+                        name = "The Apache License, Version 2.0"
+                        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                    }
+                }
+
+                developers {
+                    developer {
+                        name = "Khoa Nguyen"
+                        email = "instcode@gmail.com"
+                    }
+                    developer {
+                        name = "Dai MIKURUBE"
+                        email = "dmikurube@treasure-data.com"
+                    }
+                }
+
+                scm {
+                    connection = "scm:git:git://github.com/embulk/embulk-util-throttle-helper.git"
+                    developerConnection = "scm:git:git@github.com:embulk/embulk-util-throttle-helper.git"
+                    url = "https://github.com/embulk/embulk-util-throttle-helper"
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {  // publishMavenPublicationToMavenCentralRepository
+            name = "mavenCentral"
+            if (project.version.endsWith("-SNAPSHOT")) {
+                url "https://oss.sonatype.org/content/repositories/snapshots"
             } else {
-                throw new IllegalStateException("[ERROR] Java " + javaVersion + " is required, but found Java " + foundVersion + ". (Specify -PignoreJavaVersion to ignore the check.)");
+                url "https://oss.sonatype.org/service/local/staging/deploy/maven2"
+            }
+
+            credentials {
+                username = project.hasProperty("ossrhUsername") ? ossrhUsername : ""
+                password = project.hasProperty("ossrhPassword") ? ossrhPassword : ""
             }
         }
     }
 }
 
-compileJava {
-    dependsOn(enforceJavaVersion);
-}
-
-// TODO(dmikurube): Replace these tests with embulk-input-example.
-sourceSets {
-   test {
-        java {
-            srcDir 'src/test/java'
-            exclude 'org/embulk/input/shopify/Test*.java'
-       }
-   }
-}
-
-tasks.withType(JavaCompile) {
-    options.compilerArgs << "-Xlint:unchecked" //<< "-Xlint:deprecation"
-}
-tasks.withType(FindBugs) {
-    reports {
-        xml.enabled = false
-        html.enabled = true
-    }
-}
-
-javadoc {
-    options {
-        locale = 'en_US'
-        encoding = 'UTF-8'
-    }
-}
-
-// bintray and publishing
-bintray {
-    // write at your bintray user name and api key to ~/.gradle/gradle.properties file:
-    user = project.hasProperty('bintray_user') ? bintray_user : ''
-    key = project.hasProperty('bintray_api_key') ? bintray_api_key : ''
-
-    publications = ['bintrayMavenRelease']
-    publish = true
-
-    pkg {
-        userOrg = 'embulk-base-restclient'
-        repo = 'maven'
-        name = project.name
-        desc = 'Base class library to access RESTful services'
-        websiteUrl = 'https://github.com/embulk/embulk-base-restclient'
-        issueTrackerUrl = 'https://github.com/embulk/embulk-base-restclient/issues'
-        vcsUrl = 'https://github.com/embulk/embulk-base-restclient.git'
-        licenses = ['Apache-2.0']
-        labels = ['embulk', 'java']
-        publicDownloadNumbers = true
-
-        version {
-            name = project.version
-        }
-    }
-}
-publishing {
-    publications {
-        bintrayMavenRelease(MavenPublication) {
-            from components.java
-            artifact testsJar
-            artifact sourcesJar
-            artifact javadocJar
-        }
-    }
-}
-
-// checkstyle
-checkstyle {
-    configFile = file("${project.rootDir}/config/checkstyle/checkstyle.xml")
-    toolVersion = '6.14.1'
-}
-checkstyleMain {
-    configFile = file("${project.rootDir}/config/checkstyle/default.xml")
-    ignoreFailures = true
-}
-checkstyleTest {
-    configFile = file("${project.rootDir}/config/checkstyle/default.xml")
-    ignoreFailures = true
-}
-task checkstyle(type: Checkstyle) {
-    classpath = sourceSets.main.output + sourceSets.test.output
-    source = sourceSets.main.allJava + sourceSets.test.allJava
+signing {
+    sign publishing.publications.maven
 }
