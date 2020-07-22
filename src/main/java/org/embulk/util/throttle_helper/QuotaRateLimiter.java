@@ -1,10 +1,5 @@
 package org.embulk.util.throttle_helper;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.util.concurrent.Uninterruptibles;
-
-import javax.annotation.concurrent.ThreadSafe;
-
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -21,7 +16,6 @@ import java.util.concurrent.locks.ReentrantLock;
  * @author instcode
  * @author thangnc
  */
-@ThreadSafe
 public class QuotaRateLimiter
 {
     /**
@@ -93,8 +87,27 @@ public class QuotaRateLimiter
      */
     public long acquire(int permits)
     {
-        long millisToSleepTime = reserveAndGetWaitTime(permits);
-        Uninterruptibles.sleepUninterruptibly(millisToSleepTime, TimeUnit.MILLISECONDS);
+        final long millisToSleepTime = reserveAndGetWaitTime(permits);
+        final long endTimeMillis = System.currentTimeMillis() + millisToSleepTime;
+
+        boolean isInterrupted = false;
+        try {
+            long remainingMillisToSleep = millisToSleepTime;
+            while (true) {
+                try {
+                    Thread.sleep(remainingMillisToSleep);
+                    break;
+                } catch (final InterruptedException ignored) {
+                    isInterrupted = true;
+                    remainingMillisToSleep = endTimeMillis - System.currentTimeMillis();
+                }
+            }
+        } finally {
+            if (isInterrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
         return millisToSleepTime;
     }
 
@@ -103,7 +116,6 @@ public class QuotaRateLimiter
      *
      * @return The remaining limit
      */
-    @VisibleForTesting
     public int getRemainingLimitForTesting()
     {
         return remainingLimit;
